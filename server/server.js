@@ -34,9 +34,22 @@ app.use('/api/homework', homeworkRouter);
 app.use('/api/payments', paymentsRouter);
 app.use('/api/notifications', notificationsRouter);
 
-// Health Check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', time: new Date() });
+// Base path health check
+app.get('/', (req, res) => {
+  res.json({
+    status: 'ok',
+    message: 'TutorConnect API is running',
+    environment: process.env.NODE_ENV || 'production'
+  });
+});
+
+// Database and API health check
+app.get('/api/health', (req, res) => {
+  const dbStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
+  res.json({
+    status: 'ok',
+    database: dbStatus
+  });
 });
 
 // Database connection
