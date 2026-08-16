@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { mockDb } from '../services/mockDb';
+import { apiClient } from '../api/apiClient';
 import { Users, Award, ArrowLeft } from 'lucide-react';
 
 export const Signup = () => {
@@ -32,9 +32,15 @@ export const Signup = () => {
 
   // Load activities list for teacher specialties selection
   useEffect(() => {
-    mockDb.initialize();
-    const activeActs = mockDb.getActivities().filter(a => a.active);
-    setActivitiesList(activeActs);
+    const loadActs = async () => {
+      try {
+        const list = await apiClient.get('/activities');
+        setActivitiesList(list.filter(a => a.active));
+      } catch (err) {
+        console.error('Failed to load activities:', err);
+      }
+    };
+    loadActs();
   }, []);
 
   const handleRoleSelect = (role) => {
@@ -79,12 +85,6 @@ export const Signup = () => {
       errors.email = 'Email address is required.';
     } else if (!emailRegex.test(email)) {
       errors.email = 'Please enter a valid email address.';
-    } else {
-      const users = mockDb.getUsers();
-      const exists = users.some(u => u.email.toLowerCase() === email.toLowerCase());
-      if (exists) {
-        errors.email = 'An account with this email address already exists.';
-      }
     }
 
     // Phone validation
@@ -147,59 +147,24 @@ export const Signup = () => {
     setIsLoading(true);
 
     try {
-      const newUserId = `u-${Date.now()}`;
-      
-      const newUser = {
-        id: newUserId,
+      await apiClient.post('/auth/register', {
         name: name.trim(),
         email: email.trim().toLowerCase(),
+        password,
         phone: phone.trim(),
         role: selectedRole,
-        password: password, // preserved plain-text mock storage as requested by specifications
-        avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(name)}`,
-        active: true,
-      };
-
-      if (selectedRole === 'teacher') {
-        const teachersList = mockDb.getTeachers();
-        const newProfile = {
-          id: `tp-${Date.now()}`,
-          userId: newUserId,
-          specialtyActivityIds: selectedSpecialties,
-          bio: bio.trim(),
-          experience: `${experienceYears} years experience`,
-          rating: 5.0,
-          availability: [
-            { dayOfWeek: 'Monday', timeSlots: ['15:00', '16:00', '17:00'] },
-            { dayOfWeek: 'Wednesday', timeSlots: ['15:00', '16:00', '17:00'] },
-            { dayOfWeek: 'Friday', timeSlots: ['14:00', '15:00', '16:00'] },
-          ],
-        };
-        mockDb.saveTeachers([...teachersList, newProfile]);
-      } else if (selectedRole === 'parent') {
-        // Auto-seed one default child profile to avoid empty dashboard states
-        const childrenList = mockDb.getChildren();
-        const newChild = {
-          id: `c-${Date.now()}`,
-          parentId: newUserId,
-          name: `${name.split(' ')[0]}'s Child`,
-          age: 8,
-          avatar: 'https://images.unsplash.com/photo-1503919545889-aef636e10ad4?w=150',
-          notes: 'Initial child profile. Tap Edit in Child Profiles menu to customize name and age.',
-          active: true,
-        };
-        mockDb.saveChildren([...childrenList, newChild]);
-      }
-
-      // Save User account to DB
-      const usersList = mockDb.getUsers();
-      mockDb.saveUsers([...usersList, newUser]);
+        specialtyActivityIds: selectedRole === 'teacher' ? selectedSpecialties : undefined,
+        bio: selectedRole === 'teacher' ? bio.trim() : undefined,
+        experience: selectedRole === 'teacher' ? `${experienceYears} years experience` : undefined,
+        childName: selectedRole === 'parent' ? `${name.split(' ')[0]}'s Child` : undefined,
+        childAge: 8,
+      });
 
       setSuccessMsg('Registration successful! Redirecting to dashboard...');
       
       // Auto login
       setTimeout(async () => {
-        const loggedIn = await login(newUser.email, password);
+        const loggedIn = await login(email.trim().toLowerCase(), password);
         if (loggedIn) {
           if (selectedRole === 'parent') {
             navigate('/parent/dashboard');
@@ -211,8 +176,8 @@ export const Signup = () => {
         }
       }, 1200);
 
-    } catch {
-      setFormError('Account creation failed. Please try again.');
+    } catch (err) {
+      setFormError(err.message || 'Account creation failed. Please try again.');
       setIsLoading(false);
     }
   };

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useChild } from '../../context/ChildContext';
-import { mockDb } from '../../services/mockDb';
+import { apiClient } from '../../api/apiClient';
 import { CreditCard, CheckCircle } from 'lucide-react';
 
 export const ParentPayments = () => {
@@ -18,31 +18,37 @@ export const ParentPayments = () => {
 
   useEffect(() => {
     if (activeChild) {
-      const allPayments = mockDb.getPayments();
-      const childPayments = allPayments.filter(p => p.childId === activeChild.id);
-      setPayments(childPayments);
+      const fetchPayments = async () => {
+        try {
+          const data = await apiClient.get('/payments');
+          const childPayments = data
+            .filter(p => p.childId && (p.childId._id === activeChild.id || p.childId.id === activeChild.id))
+            .map(p => ({ ...p, id: p._id }));
+          setPayments(childPayments);
+        } catch (err) {
+          console.error('Failed to load payments:', err);
+        }
+      };
+      fetchPayments();
     }
   }, [activeChild, paySuccess]);
 
-  const getActivityName = (id) => {
-    if (!id) return 'General Tuition';
-    const enrollments = mockDb.getEnrollments();
-    const enroll = enrollments.find(e => e.id === id);
-    if (!enroll) return 'Extracurricular Class';
-    const activities = mockDb.getActivities();
-    return activities.find(a => a.id === enroll.activityId)?.name || 'Extracurricular';
+  const getActivityName = (classSession) => {
+    if (classSession && classSession.activityId && typeof classSession.activityId === 'object') {
+      return classSession.activityId.name;
+    }
+    return 'Extracurricular Class';
   };
 
-  const handleSimulatePayment = () => {
+  const handleSimulatePayment = async () => {
     if (!selectedPayment) return;
     setIsPaying(true);
-    setTimeout(() => {
-      mockDb.markPaymentPaid(
-        selectedPayment.id,
+    try {
+      await apiClient.put(`/payments/${selectedPayment.id || selectedPayment._id}/mark-paid`, {
         paymentMethod,
-        txnRef || `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
-        new Date().toISOString().split('T')[0]
-      );
+        paymentReference: txnRef || `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
+        paymentDate: new Date().toISOString().split('T')[0],
+      });
       setIsPaying(false);
       setPaySuccess(true);
       setTimeout(() => {
@@ -50,7 +56,10 @@ export const ParentPayments = () => {
         setPaySuccess(false);
         setTxnRef('');
       }, 1500);
-    }, 1500);
+    } catch (err) {
+      alert(err.message || 'Failed to process payment.');
+      setIsPaying(false);
+    }
   };
 
   const pendingPayments = payments.filter(p => p.status === 'pending' || p.status === 'overdue');
@@ -143,8 +152,8 @@ export const ParentPayments = () => {
                         </div>
                         <div>
                           <span className="text-stone-400 block text-[10px]">METHOD & REF</span>
-                          <span className="font-semibold text-stone-605 mt-0.5 truncate block max-w-[120px]" title={p.reference}>
-                            {p.paymentMethod?.toUpperCase()} - {p.reference}
+                          <span className="font-semibold text-stone-605 mt-0.5 truncate block max-w-[120px]" title={p.paymentReference || p.reference}>
+                            {p.paymentMethod?.toUpperCase()} - {p.paymentReference || p.reference}
                           </span>
                         </div>
                       </>

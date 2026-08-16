@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useChild } from '../../context/ChildContext';
 import { useAuth } from '../../context/AuthContext';
-import { mockDb } from '../../services/mockDb';
+import { apiClient } from '../../api/apiClient';
 import { 
   Calendar, BookOpen, CreditCard, Clock, 
   ChevronRight, PlusCircle, AlertCircle
@@ -34,60 +34,85 @@ export const ParentDashboard = () => {
 
   useEffect(() => {
     if (activeChild) {
-      const classes = mockDb.getClasses();
-      const childClasses = classes.filter(
-        c => c.childId === activeChild.id && c.status === 'upcoming' && c.bookingStatus === 'approved'
-      );
-      const sortedClasses = childClasses.sort((a, b) => {
-        const dateTimeA = new Date(`${a.date}T${a.startTime}`).getTime();
-        const dateTimeB = new Date(`${b.date}T${b.startTime}`).getTime();
-        return dateTimeA - dateTimeB;
-      });
-      setNextClass(sortedClasses[0] || null);
+      const loadDashboardData = async () => {
+        try {
+          // Fetch Bookings
+          const bookings = await apiClient.get('/bookings');
+          const childClasses = bookings.filter(
+            c => c.childId && (c.childId._id === activeChild.id || c.childId.id === activeChild.id) && c.status === 'upcoming' && c.bookingStatus === 'approved'
+          );
+          const sortedClasses = childClasses.sort((a, b) => {
+            const dateTimeA = new Date(`${a.date}T${a.startTime}`).getTime();
+            const dateTimeB = new Date(`${b.date}T${b.startTime}`).getTime();
+            return dateTimeA - dateTimeB;
+          });
+          setNextClass(sortedClasses[0] || null);
 
-      const homework = mockDb.getHomework();
-      const childHw = homework.filter(h => h.childId === activeChild.id && h.status === 'pending');
-      setPendingHomework(childHw);
+          // Fetch Homework
+          const homework = await apiClient.get('/homework');
+          const childHw = homework.filter(
+            h => h.childId && (h.childId._id === activeChild.id || h.childId.id === activeChild.id) && h.status === 'pending'
+          );
+          setPendingHomework(childHw.map(h => ({ ...h, id: h._id })));
 
-      const payments = mockDb.getPayments();
-      const childPayments = payments.filter(p => p.childId === activeChild.id && p.status !== 'paid');
-      const activePayment = childPayments.find(p => p.status === 'overdue') || childPayments.find(p => p.status === 'pending');
-      setPendingPayment(activePayment || null);
+          // Fetch Payments
+          const payments = await apiClient.get('/payments');
+          const childPayments = payments.filter(
+            p => p.childId && (p.childId._id === activeChild.id || p.childId.id === activeChild.id) && p.status !== 'paid'
+          );
+          const activePayment = childPayments.find(p => p.status === 'overdue') || childPayments.find(p => p.status === 'pending');
+          setPendingPayment(activePayment ? { ...activePayment, id: activePayment._id } : null);
+        } catch (err) {
+          console.error('Failed to load parent dashboard statistics:', err);
+        }
+      };
+      loadDashboardData();
     }
   }, [activeChild, paySuccess, hwSuccess]);
 
   useEffect(() => {
     if (currentUser) {
-      const notifs = mockDb.getNotifications();
-      const parentNotifs = notifs.filter(n => n.recipientUserId === currentUser.id);
-      setRecentNotifications(parentNotifs.slice(0, 3));
+      const loadNotifications = async () => {
+        try {
+          const notifs = await apiClient.get('/notifications');
+          setRecentNotifications(notifs.slice(0, 3));
+        } catch (err) {
+          console.error('Failed to load dashboard notifications:', err);
+        }
+      };
+      loadNotifications();
     }
   }, [currentUser]);
 
-  const handlePay = () => {
+  const handlePay = async () => {
     if (!pendingPayment) return;
     setIsPaying(true);
-    setTimeout(() => {
-      mockDb.markPaymentPaid(
-        pendingPayment.id, 
-        paymentMethod, 
-        payReference || `TXN-${Math.floor(10000 + Math.random() * 90000)}`, 
-        new Date().toISOString().split('T')[0]
-      );
+    try {
+      await apiClient.put(`/payments/${pendingPayment.id || pendingPayment._id}/mark-paid`, {
+        paymentMethod,
+        paymentReference: payReference || `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
+        paymentDate: new Date().toISOString().split('T')[0],
+      });
       setIsPaying(false);
       setPaySuccess(true);
       setTimeout(() => {
         setShowPayModal(false);
         setPaySuccess(false);
       }, 1500);
-    }, 1500);
+    } catch (err) {
+      alert(err.message || 'Payment simulation failed.');
+      setIsPaying(false);
+    }
   };
 
-  const handleHwSubmit = () => {
+  const handleHwSubmit = async () => {
     if (!selectedHw) return;
     setIsSubmittingHw(true);
-    setTimeout(() => {
-      mockDb.submitHomework(selectedHw.id, hwNotes, hwFile || 'my_practice_notes.jpg');
+    try {
+      await apiClient.put(`/homework/${selectedHw.id || selectedHw._id}/complete`, {
+        submissionNotes: hwNotes,
+        attachmentName: hwFile || 'my_practice_notes.jpg',
+      });
       setIsSubmittingHw(false);
       setHwSuccess(true);
       setTimeout(() => {
@@ -96,17 +121,20 @@ export const ParentDashboard = () => {
         setHwNotes('');
         setHwFile('');
       }, 1500);
-    }, 1200);
+    } catch (err) {
+      alert(err.message || 'Failed to submit homework.');
+      setIsSubmittingHw(false);
+    }
   };
 
-  const getActivityName = (id) => {
-    const activities = mockDb.getActivities();
-    return activities.find(a => a.id === id)?.name || 'Extracurricular';
+  const getActivityName = (act) => {
+    if (act && typeof act === 'object') return act.name;
+    return 'Extracurricular';
   };
 
-  const getTeacherName = (id) => {
-    const users = mockDb.getUsers();
-    return users.find(u => u.id === id)?.name || 'Tutor';
+  const getTeacherName = (tutor) => {
+    if (tutor && typeof tutor === 'object') return tutor.name;
+    return 'Tutor';
   };
 
   if (!activeChild) {

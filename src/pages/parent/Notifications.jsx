@@ -1,17 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { mockDb } from '../../services/mockDb';
+import { apiClient } from '../../api/apiClient';
 import { Bell, Check, Trash2, Clock } from 'lucide-react';
 
 export const ParentNotifications = () => {
   const { currentUser } = useAuth();
   const [notifications, setNotifications] = useState([]);
 
-  const fetchNotifs = () => {
+  const fetchNotifs = async () => {
     if (currentUser) {
-      const allNotifs = mockDb.getNotifications();
-      const filtered = allNotifs.filter(n => n.recipientUserId === currentUser.id);
-      setNotifications(filtered);
+      try {
+        const data = await apiClient.get('/notifications');
+        const formatted = data.map(n => ({ ...n, id: n._id }));
+        setNotifications(formatted);
+      } catch (err) {
+        console.error('Failed to load notifications:', err);
+      }
     }
   };
 
@@ -19,23 +23,31 @@ export const ParentNotifications = () => {
     fetchNotifs();
   }, [currentUser]);
 
-  const handleMarkRead = (id) => {
-    mockDb.markNotificationRead(id);
-    fetchNotifs();
+  const handleMarkRead = async (id) => {
+    try {
+      await apiClient.put(`/notifications/${id}/read`);
+      fetchNotifs();
+    } catch (err) {
+      console.error(err);
+    }
   };
 
-  const handleMarkAllRead = () => {
-    notifications.forEach(n => {
-      if (!n.read) mockDb.markNotificationRead(n.id);
-    });
-    fetchNotifs();
+  const handleMarkAllRead = async () => {
+    try {
+      await apiClient.put('/notifications/read-all');
+      fetchNotifs();
+    } catch (err) {
+      console.error(err);
+    }
   };
 
-  const handleDelete = (id) => {
-    const allNotifs = mockDb.getNotifications();
-    const filtered = allNotifs.filter(n => n.id !== id);
-    mockDb.saveNotifications(filtered);
-    fetchNotifs();
+  const handleDelete = async (id) => {
+    try {
+      await apiClient.delete(`/notifications/${id}`);
+      fetchNotifs();
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   return (

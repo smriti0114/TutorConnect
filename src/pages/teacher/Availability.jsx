@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { mockDb } from '../../services/mockDb';
+import { apiClient } from '../../api/apiClient';
 import { Clock, Plus, Trash2, CheckCircle } from 'lucide-react';
 
 export const TeacherAvailability = () => {
@@ -19,14 +19,18 @@ export const TeacherAvailability = () => {
 
   useEffect(() => {
     if (currentUser) {
-      const teachers = mockDb.getTeachers();
-      const myProfile = teachers.find(t => t.userId === currentUser.id);
-      if (myProfile) {
-        setProfile(myProfile);
-        setBio(myProfile.bio || '');
-        setExperience(myProfile.experience || '');
-        setAvailability(myProfile.availability || []);
-      }
+      const fetchProfile = async () => {
+        try {
+          const myProfile = await apiClient.get('/teachers/me');
+          setProfile(myProfile);
+          setBio(myProfile.bio || '');
+          setExperience(myProfile.experience || '');
+          setAvailability(myProfile.availability || []);
+        } catch (err) {
+          console.error('Failed to load teacher profile:', err);
+        }
+      };
+      fetchProfile();
     }
   }, [currentUser]);
 
@@ -61,20 +65,21 @@ export const TeacherAvailability = () => {
     setAvailability(updated);
   };
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
     if (!profile) return;
 
-    const teachers = mockDb.getTeachers();
-    const updated = teachers.map(t => 
-      t.id === profile.id 
-        ? { ...t, bio, experience, availability } 
-        : t
-    );
-
-    mockDb.saveTeachers(updated);
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 2000);
+    try {
+      await apiClient.put('/teachers/profile', {
+        bio,
+        experience,
+        availability,
+      });
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2000);
+    } catch (err) {
+      alert(err.message || 'Failed to save profile.');
+    }
   };
 
   const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];

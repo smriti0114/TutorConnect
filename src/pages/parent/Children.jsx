@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useChild } from '../../context/ChildContext';
 import { useAuth } from '../../context/AuthContext';
-import { mockDb } from '../../services/mockDb';
+import { apiClient } from '../../api/apiClient';
 import { Users, Plus, Edit2, Check, X, Trash2 } from 'lucide-react';
 
 export const ParentChildren = () => {
@@ -25,50 +25,52 @@ export const ParentChildren = () => {
     'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
   ];
 
-  const handleCreate = (e) => {
+  const handleCreate = async (e) => {
     e.preventDefault();
     if (!name || !currentUser) return;
 
-    const children = mockDb.getChildren();
-    const newChild = {
-      id: `c-${Date.now()}`,
-      parentId: currentUser.id,
-      name,
-      age: Number(age),
-      avatar: avatar || avatarsList[0],
-      notes,
-      active: true,
-    };
-
-    mockDb.saveChildren([...children, newChild]);
-    refreshChildren();
-    resetForm();
-    setShowAddForm(false);
+    try {
+      await apiClient.post('/children', {
+        name,
+        age: Number(age),
+        avatar: avatar || avatarsList[0],
+        notes,
+      });
+      refreshChildren();
+      resetForm();
+      setShowAddForm(false);
+    } catch (err) {
+      alert(err.message || 'Failed to create child profile.');
+    }
   };
 
-  const handleUpdate = (e) => {
+  const handleUpdate = async (e) => {
     e.preventDefault();
     if (!editingChild) return;
 
-    const children = mockDb.getChildren();
-    const updated = children.map(c => 
-      c.id === editingChild.id 
-        ? { ...c, name, age: Number(age), avatar, notes } 
-        : c
-    );
-
-    mockDb.saveChildren(updated);
-    refreshChildren();
-    resetForm();
-    setEditingChild(null);
+    try {
+      await apiClient.put(`/children/${editingChild.id}`, {
+        name,
+        age: Number(age),
+        avatar,
+        notes,
+      });
+      refreshChildren();
+      resetForm();
+      setEditingChild(null);
+    } catch (err) {
+      alert(err.message || 'Failed to update child profile.');
+    }
   };
 
-  const handleDeactivate = (childId) => {
+  const handleDeactivate = async (childId) => {
     if (window.confirm('Are you sure you want to deactivate this child profile? All associated class entries will remain, but the profile will be hidden.')) {
-      const children = mockDb.getChildren();
-      const updated = children.map(c => c.id === childId ? { ...c, active: false } : c);
-      mockDb.saveChildren(updated);
-      refreshChildren();
+      try {
+        await apiClient.delete(`/children/${childId}`);
+        refreshChildren();
+      } catch (err) {
+        alert(err.message || 'Failed to deactivate child profile.');
+      }
     }
   };
 

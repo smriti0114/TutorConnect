@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { mockDb } from '../../services/mockDb';
+import { apiClient } from '../../api/apiClient';
 import { Activity, Plus, Edit2, Check, X } from 'lucide-react';
 
 export const AdminActivities = () => {
@@ -17,8 +17,13 @@ export const AdminActivities = () => {
   const [newPrice, setNewPrice] = useState(30);
   const [newDescription, setNewDescription] = useState('');
 
-  const fetchActivities = () => {
-    setActivities(mockDb.getActivities());
+  const fetchActivities = async () => {
+    try {
+      const data = await apiClient.get('/activities');
+      setActivities(data.map(a => ({ ...a, id: a._id })));
+    } catch (err) {
+      console.error('Failed to fetch activities:', err);
+    }
   };
 
   useEffect(() => {
@@ -26,57 +31,58 @@ export const AdminActivities = () => {
   }, []);
 
   const startEdit = (act) => {
-    setEditingId(act.id);
+    setEditingId(act.id || act._id);
     setName(act.name);
     setPrice(act.pricePerClass);
     setDescription(act.description || '');
   };
 
-  const handleUpdate = (e) => {
+  const handleUpdate = async (e) => {
     e.preventDefault();
     if (!editingId) return;
 
-    const list = mockDb.getActivities();
-    const updated = list.map(a => 
-      a.id === editingId 
-        ? { ...a, name, pricePerClass: Number(price), description } 
-        : a
-    );
-
-    mockDb.saveActivities(updated);
-    setEditingId(null);
-    fetchActivities();
+    try {
+      await apiClient.put(`/activities/${editingId}`, {
+        name,
+        pricePerClass: Number(price),
+        description,
+      });
+      setEditingId(null);
+      fetchActivities();
+    } catch (err) {
+      alert(err.message || 'Failed to update activity.');
+    }
   };
 
-  const handleCreate = (e) => {
+  const handleCreate = async (e) => {
     e.preventDefault();
     if (!newName) return;
 
-    const list = mockDb.getActivities();
-    const newAct = {
-      id: `act-${newName.toLowerCase().replace(/\s+/g, '-')}`,
-      name: newName,
-      pricePerClass: Number(newPrice),
-      description: newDescription,
-      iconName: 'Activity',
-      active: true,
-    };
-
-    mockDb.saveActivities([...list, newAct]);
-    setShowAddForm(false);
-    setNewName('');
-    setNewPrice(30);
-    setNewDescription('');
-    fetchActivities();
+    try {
+      await apiClient.post('/activities', {
+        name: newName,
+        pricePerClass: Number(newPrice),
+        description: newDescription,
+      });
+      setShowAddForm(false);
+      setNewName('');
+      setNewPrice(30);
+      setNewDescription('');
+      fetchActivities();
+    } catch (err) {
+      alert(err.message || 'Failed to create activity.');
+    }
   };
 
-  const handleToggleActive = (id) => {
-    const list = mockDb.getActivities();
-    const updated = list.map(a => 
-      a.id === id ? { ...a, active: !a.active } : a
-    );
-    mockDb.saveActivities(updated);
-    fetchActivities();
+  const handleToggleActive = async (id, currentActive) => {
+    try {
+      await apiClient.put(`/activities/${id}`, {
+        active: !currentActive,
+      });
+      fetchActivities();
+    } catch (err) {
+      alert(err.message || 'Failed to toggle active state.');
+    }
   };
 
   return (
@@ -244,7 +250,7 @@ export const AdminActivities = () => {
                       <Edit2 className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => handleToggleActive(act.id)}
+                      onClick={() => handleToggleActive(act.id, act.active)}
                       className={`px-3 py-1 border rounded-xl text-[10px] font-bold transition-all ${
                         act.active ? 'border-rose-200 hover:bg-rose-50 text-rose-600' : 'border-emerald-200 hover:bg-emerald-50 text-emerald-600'
                       }`}

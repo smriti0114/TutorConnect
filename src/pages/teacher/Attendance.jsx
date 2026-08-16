@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { mockDb } from '../../services/mockDb';
+import { apiClient } from '../../api/apiClient';
 import { CheckCircle2 } from 'lucide-react';
 
 export const TeacherAttendance = () => {
@@ -20,20 +20,34 @@ export const TeacherAttendance = () => {
 
   useEffect(() => {
     if (currentUser) {
-      const allClass = mockDb.getClasses();
-      const myClasses = allClass.filter(c => c.teacherId === currentUser.id && c.bookingStatus === 'approved')
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      setClasses(myClasses);
+      const fetchClasses = async () => {
+        try {
+          const data = await apiClient.get('/bookings');
+          const myClasses = data
+            .filter(c => c.teacherId && (c.teacherId._id === currentUser.id || c.teacherId.id === currentUser.id) && c.bookingStatus === 'approved')
+            .map(c => ({ ...c, id: c._id }))
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          setClasses(myClasses);
+        } catch (err) {
+          console.error('Failed to load teacher schedule:', err);
+        }
+      };
+      fetchClasses();
     }
   }, [currentUser, success]);
 
-  const handleLog = () => {
+  const handleLog = async () => {
     if (!selectedClass) return;
     setIsSubmitting(true);
-    setTimeout(() => {
+    try {
       const statusValue = status === 'absent' ? 'completed' : status;
       const notesValue = status === 'absent' ? `[STUDENT ABSENT] ${notes}` : notes;
-      mockDb.logClassAttendance(selectedClass.id, statusValue, notesValue);
+      
+      await apiClient.put(`/bookings/${selectedClass.id || selectedClass._id}/log`, {
+        status: statusValue,
+        teacherNotes: notesValue,
+      });
+
       setIsSubmitting(false);
       setSuccess(true);
       setTimeout(() => {
@@ -41,17 +55,20 @@ export const TeacherAttendance = () => {
         setSuccess(false);
         setNotes('');
       }, 1500);
-    }, 1200);
+    } catch (err) {
+      alert(err.message || 'Failed to submit class log.');
+      setIsSubmitting(false);
+    }
   };
 
-  const getStudentName = (id) => {
-    const children = mockDb.getChildren();
-    return children.find(c => c.id === id)?.name || 'Student';
+  const getStudentName = (child) => {
+    if (child && typeof child === 'object') return child.name;
+    return 'Student';
   };
 
-  const getActivityName = (id) => {
-    const activities = mockDb.getActivities();
-    return activities.find(a => a.id === id)?.name || 'Extracurricular';
+  const getActivityName = (act) => {
+    if (act && typeof act === 'object') return act.name;
+    return 'Extracurricular';
   };
 
   const filteredClasses = classes.filter(c => {

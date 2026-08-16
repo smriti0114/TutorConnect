@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useChild } from '../../context/ChildContext';
-import { mockDb } from '../../services/mockDb';
+import { apiClient } from '../../api/apiClient';
 import { Calendar, Clipboard, AlertCircle, Star } from 'lucide-react';
 
 export const ParentClasses = () => {
@@ -18,57 +18,61 @@ export const ParentClasses = () => {
 
   useEffect(() => {
     if (activeChild) {
-      const classes = mockDb.getClasses();
-      const childSessions = classes.filter(c => c.childId === activeChild.id);
-      
-      const upcoming = childSessions
-        .filter(c => c.status === 'upcoming' || c.status === 'rescheduled')
-        .sort((a, b) => new Date(`${a.date}T${a.startTime}`).getTime() - new Date(`${b.date}T${b.startTime}`).getTime());
+      const fetchClasses = async () => {
+        try {
+          const data = await apiClient.get('/bookings');
+          // Filter child classes
+          const childSessions = data.filter(c => c.childId && (c.childId._id === activeChild.id || c.childId.id === activeChild.id));
+          
+          const upcoming = childSessions
+            .filter(c => c.status === 'upcoming' || c.status === 'rescheduled')
+            .map(c => ({ ...c, id: c._id }))
+            .sort((a, b) => new Date(`${a.date}T${a.startTime}`).getTime() - new Date(`${b.date}T${b.startTime}`).getTime());
 
-      const past = childSessions
-        .filter(c => c.status === 'completed' || c.status === 'canceled')
-        .sort((a, b) => new Date(`${b.date}T${a.startTime}`).getTime() - new Date(`${a.date}T${a.startTime}`).getTime());
+          const past = childSessions
+            .filter(c => c.status === 'completed' || c.status === 'canceled')
+            .map(c => ({ ...c, id: c._id }))
+            .sort((a, b) => new Date(`${b.date}T${a.startTime}`).getTime() - new Date(`${a.date}T${a.startTime}`).getTime());
 
-      setUpcomingClasses(upcoming);
-      setCompletedClasses(past);
+          setUpcomingClasses(upcoming);
+          setCompletedClasses(past);
+        } catch (err) {
+          console.error('Failed to load classes:', err);
+        }
+      };
+      fetchClasses();
     }
   }, [activeChild, reviewSaved]);
 
-  const getActivityName = (id) => {
-    const activities = mockDb.getActivities();
-    return activities.find(a => a.id === id)?.name || 'Extracurricular';
+  const getActivityName = (act) => {
+    if (act && typeof act === 'object') return act.name;
+    return 'Extracurricular';
   };
 
-  const getTeacherName = (id) => {
-    const users = mockDb.getUsers();
-    return users.find(u => u.id === id)?.name || 'Tutor';
+  const getTeacherName = (tutor) => {
+    if (tutor && typeof tutor === 'object') return tutor.name;
+    return 'Tutor';
   };
 
-  const handleFeedbackSubmit = () => {
+  const handleFeedbackSubmit = async () => {
     if (!selectedReviewSession) return;
     
-    const classes = mockDb.getClasses();
-    const updated = classes.map(c => 
-      c.id === selectedReviewSession.id 
-        ? { ...c, ratingByParent: rating, parentFeedback: feedbackText } 
-        : c
-    );
-    mockDb.saveClasses(updated);
+    try {
+      await apiClient.put(`/bookings/${selectedReviewSession.id || selectedReviewSession._id}/log`, {
+        ratingByParent: rating,
+        parentFeedback: feedbackText,
+      });
 
-    mockDb.addNotification(
-      selectedReviewSession.teacherId,
-      'class',
-      'New Student Feedback Received',
-      `Parent of ${activeChild.name} left a ${rating}-star review for the class on ${selectedReviewSession.date}.`
-    );
-
-    setReviewSaved(true);
-    setTimeout(() => {
-      setSelectedReviewSession(null);
-      setReviewSaved(false);
-      setFeedbackText('');
-      setRating(5);
-    }, 1500);
+      setReviewSaved(true);
+      setTimeout(() => {
+        setSelectedReviewSession(null);
+        setReviewSaved(false);
+        setFeedbackText('');
+        setRating(5);
+      }, 1500);
+    } catch (err) {
+      alert(err.message || 'Failed to submit review.');
+    }
   };
 
   if (!activeChild) {

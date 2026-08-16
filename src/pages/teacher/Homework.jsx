@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { mockDb } from '../../services/mockDb';
+import { apiClient } from '../../api/apiClient';
 import { BookOpen, Plus } from 'lucide-react';
 
 export const TeacherHomework = () => {
@@ -18,46 +18,68 @@ export const TeacherHomework = () => {
 
   useEffect(() => {
     if (currentUser) {
-      const allHw = mockDb.getHomework();
-      const myHw = allHw.filter(h => h.teacherId === currentUser.id)
-        .sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
-      setHomework(myHw);
+      const fetchHomeworkAndStudents = async () => {
+        try {
+          const hwData = await apiClient.get('/homework');
+          const myHw = hwData
+            .filter(h => h.teacherId && (h.teacherId._id === currentUser.id || h.teacherId.id === currentUser.id))
+            .map(h => ({ ...h, id: h._id }))
+            .sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
+          setHomework(myHw);
 
-      const classes = mockDb.getClasses();
-      const myStudentIds = Array.from(new Set(classes.filter(c => c.teacherId === currentUser.id).map(c => c.childId)));
-      const children = mockDb.getChildren();
-      const myStudents = children.filter(c => myStudentIds.includes(c.id) && c.active);
-      setStudents(myStudents);
-      if (myStudents.length > 0) {
-        setSelectedChildId(myStudents[0].id);
-      }
+          const bookings = await apiClient.get('/bookings');
+          const myClasses = bookings.filter(c => c.teacherId && (c.teacherId._id === currentUser.id || c.teacherId.id === currentUser.id));
+          const uniqueChildIds = new Set();
+          const tempStudents = [];
+          myClasses.forEach(c => {
+            if (c.childId && typeof c.childId === 'object' && !uniqueChildIds.has(c.childId._id)) {
+              uniqueChildIds.add(c.childId._id);
+              tempStudents.push({
+                id: c.childId._id,
+                name: c.childId.name,
+                age: c.childId.age,
+                avatar: c.childId.avatar
+              });
+            }
+          });
+          setStudents(tempStudents);
+          if (tempStudents.length > 0 && !selectedChildId) {
+            setSelectedChildId(tempStudents[0].id);
+          }
+        } catch (err) {
+          console.error('Failed to load homework and students:', err);
+        }
+      };
+      fetchHomeworkAndStudents();
     }
   }, [currentUser, success]);
 
-  const handleAssign = (e) => {
+  const handleAssign = async (e) => {
     e.preventDefault();
     if (!currentUser || !selectedChildId || !description || !dueDate) return;
 
-    mockDb.assignHomework(
-      currentUser.id,
-      selectedChildId,
-      `cls-custom-${Date.now()}`,
-      description,
-      dueDate
-    );
+    try {
+      await apiClient.post('/homework', {
+        childId: selectedChildId,
+        description,
+        dueDate,
+      });
 
-    setSuccess(true);
-    setTimeout(() => {
-      setSuccess(false);
-      setShowForm(false);
-      setDescription('');
-      setDueDate('');
-    }, 1500);
+      setSuccess(true);
+      setTimeout(() => {
+        setSuccess(false);
+        setShowForm(false);
+        setDescription('');
+        setDueDate('');
+      }, 1500);
+    } catch (err) {
+      alert(err.message || 'Failed to assign homework.');
+    }
   };
 
-  const getStudentName = (id) => {
-    const children = mockDb.getChildren();
-    return children.find(c => c.id === id)?.name || 'Student';
+  const getStudentName = (child) => {
+    if (child && typeof child === 'object') return child.name;
+    return 'Student';
   };
 
   return (

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { mockDb } from '../../services/mockDb';
+import { apiClient } from '../../api/apiClient';
 import { Clock, Users, DollarSign, CheckCircle2, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -10,6 +10,7 @@ export const TeacherDashboard = () => {
   const [todayClasses, setTodayClasses] = useState([]);
   const [nextClass, setNextClass] = useState(null);
   const [pendingRequests, setPendingRequests] = useState([]);
+  const [studentsList, setStudentsList] = useState([]);
   
   // Stats
   const [monthlyEarnings, setMonthlyEarnings] = useState(0);
@@ -25,49 +26,77 @@ export const TeacherDashboard = () => {
 
   useEffect(() => {
     if (currentUser) {
-      const classes = mockDb.getClasses();
-      const myClasses = classes.filter(c => c.teacherId === currentUser.id);
+      const loadDashboardData = async () => {
+        try {
+          const bookings = await apiClient.get('/bookings');
+          const myClasses = bookings.filter(c => c.teacherId && (c.teacherId._id === currentUser.id || c.teacherId.id === currentUser.id));
 
-      const todayStr = new Date().toISOString().split('T')[0];
-      const todaySessions = myClasses.filter(c => c.date === todayStr && c.bookingStatus === 'approved');
-      setTodayClasses(todaySessions);
+          const todayStr = new Date().toISOString().split('T')[0];
+          const todaySessions = myClasses.filter(c => c.date === todayStr && c.bookingStatus === 'approved');
+          setTodayClasses(todaySessions.map(c => ({ ...c, id: c._id })));
 
-      const upcoming = myClasses
-        .filter(c => c.status === 'upcoming' && c.bookingStatus === 'approved')
-        .sort((a, b) => new Date(`${a.date}T${a.startTime}`).getTime() - new Date(`${b.date}T${b.startTime}`).getTime());
-      setNextClass(upcoming[0] || null);
+          const upcoming = myClasses
+            .filter(c => c.status === 'upcoming' && c.bookingStatus === 'approved')
+            .map(c => ({ ...c, id: c._id }))
+            .sort((a, b) => new Date(`${a.date}T${a.startTime}`).getTime() - new Date(`${b.date}T${b.startTime}`).getTime());
+          setNextClass(upcoming[0] || null);
 
-      const pending = myClasses.filter(c => c.bookingStatus === 'pending');
-      setPendingRequests(pending);
+          const pending = myClasses.filter(c => c.bookingStatus === 'pending').map(c => ({ ...c, id: c._id }));
+          setPendingRequests(pending);
 
-      const completedThisMonth = myClasses.filter(c => {
-        if (c.status !== 'completed') return false;
-        const classDate = new Date(c.date);
-        const now = new Date();
-        return classDate.getMonth() === now.getMonth() && classDate.getFullYear() === now.getFullYear();
-      });
-      setClassesTaughtThisMonth(completedThisMonth.length);
+          const completedThisMonth = myClasses.filter(c => {
+            if (c.status !== 'completed') return false;
+            const classDate = new Date(c.date);
+            const now = new Date();
+            return classDate.getMonth() === now.getMonth() && classDate.getFullYear() === now.getFullYear();
+          });
+          setClassesTaughtThisMonth(completedThisMonth.length);
 
-      const activities = mockDb.getActivities();
-      let earnings = 0;
-      completedThisMonth.forEach(c => {
-        const act = activities.find(a => a.id === c.activityId);
-        earnings += act ? act.pricePerClass : 40;
-      });
-      setMonthlyEarnings(earnings);
+          let earnings = 0;
+          completedThisMonth.forEach(c => {
+            if (c.activityId && typeof c.activityId === 'object') {
+              earnings += c.activityId.pricePerClass || 40;
+            } else {
+              earnings += 40;
+            }
+          });
+          setMonthlyEarnings(earnings);
 
-      const uniqueChildIds = new Set(myClasses.map(c => c.childId));
-      setTotalStudents(uniqueChildIds.size);
+          const uniqueChildIds = new Set();
+          const tempStudents = [];
+          myClasses.forEach(c => {
+            if (c.childId && typeof c.childId === 'object' && !uniqueChildIds.has(c.childId._id)) {
+              uniqueChildIds.add(c.childId._id);
+              tempStudents.push({
+                id: c.childId._id,
+                name: c.childId.name,
+                age: c.childId.age,
+                avatar: c.childId.avatar
+              });
+            }
+          });
+          setStudentsList(tempStudents);
+          setTotalStudents(tempStudents.length);
+        } catch (err) {
+          console.error('Failed to load teacher dashboard statistics:', err);
+        }
+      };
+      loadDashboardData();
     }
   }, [currentUser, submitSuccess]);
 
-  const handleLogAttendance = () => {
+  const handleLogAttendance = async () => {
     if (!selectedClass) return;
     setIsSubmitting(true);
-    setTimeout(() => {
+    try {
       const statusValue = attendanceStatus === 'absent' ? 'completed' : attendanceStatus;
       const notesValue = attendanceStatus === 'absent' ? `[STUDENT ABSENT] ${feedbackNotes}` : feedbackNotes;
-      mockDb.logClassAttendance(selectedClass.id, statusValue, notesValue);
+      
+      await apiClient.put(`/bookings/${selectedClass.id || selectedClass._id}/log`, {
+        status: statusValue,
+        teacherNotes: notesValue,
+      });
+
       setIsSubmitting(false);
       setSubmitSuccess(true);
       setTimeout(() => {
@@ -75,24 +104,25 @@ export const TeacherDashboard = () => {
         setSubmitSuccess(false);
         setFeedbackNotes('');
       }, 1500);
-    }, 1200);
+    } catch (err) {
+      alert(err.message || 'Failed to submit log.');
+      setIsSubmitting(false);
+    }
   };
 
-
-
-  const getStudentName = (id) => {
-    const children = mockDb.getChildren();
-    return children.find(c => c.id === id)?.name || 'Student';
+  const getStudentName = (child) => {
+    if (child && typeof child === 'object') return child.name;
+    return 'Student';
   };
 
-  const getStudentAge = (id) => {
-    const children = mockDb.getChildren();
-    return children.find(c => c.id === id)?.age || 8;
+  const getStudentAge = (child) => {
+    if (child && typeof child === 'object') return child.age;
+    return 8;
   };
 
-  const getActivityName = (id) => {
-    const activities = mockDb.getActivities();
-    return activities.find(a => a.id === id)?.name || 'Extracurricular';
+  const getActivityName = (act) => {
+    if (act && typeof act === 'object') return act.name;
+    return 'Extracurricular';
   };
 
   return (
@@ -253,7 +283,7 @@ export const TeacherDashboard = () => {
         <div className="bg-white p-6 rounded-3xl border border-stone-200 shadow-xs flex flex-col">
           <h3 className="text-base font-bold text-stone-800 mb-4 pb-2 border-b border-stone-100 font-display">Assigned Students</h3>
           <div className="flex-1 space-y-4">
-            {mockDb.getChildren().slice(0, 4).map(child => (
+            {studentsList.slice(0, 4).map(child => (
               <div key={child.id} className="flex items-center justify-between text-xs animate-fadeIn">
                 <div className="flex items-center space-x-2.5">
                   <img src={child.avatar} alt={child.name} className="w-8 h-8 rounded-full object-cover" />

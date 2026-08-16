@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { mockDb } from '../services/mockDb';
+import { apiClient } from '../api/apiClient';
 
 const AuthContext = createContext(undefined);
 
@@ -9,43 +9,60 @@ export const AuthProvider = ({ children }) => {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    mockDb.initialize();
-
-    const storedUser = localStorage.getItem('tutoring_current_user');
-    if (storedUser) {
-      try {
-        setCurrentUser(JSON.parse(storedUser));
-      } catch (e) {
-        localStorage.removeItem('tutoring_current_user');
+    const verifySession = async () => {
+      const token = localStorage.getItem('tutoring_jwt_token');
+      if (token) {
+        try {
+          const user = await apiClient.get('/auth/me');
+          setCurrentUser({
+            id: user._id,
+            name: user.name,
+            email: user.email,
+            phone: user.phone,
+            role: user.role,
+          });
+        } catch (err) {
+          localStorage.removeItem('tutoring_jwt_token');
+          localStorage.removeItem('tutoring_current_user');
+          setCurrentUser(null);
+        }
       }
-    }
-    setIsLoading(false);
+      setIsLoading(false);
+    };
+
+    verifySession();
+
+    // Listen for global session expiration events
+    const handleExpire = () => {
+      setCurrentUser(null);
+    };
+    window.addEventListener('auth_session_expired', handleExpire);
+    return () => {
+      window.removeEventListener('auth_session_expired', handleExpire);
+    };
   }, []);
 
   const login = async (email, password) => {
     setIsLoading(true);
     setError(null);
     try {
-      await new Promise(resolve => setTimeout(resolve, 500));
+      const data = await apiClient.post('/auth/login', { email, password });
       
-      const user = mockDb.validateUser(email, password);
-      if (user) {
-        if (!user.active) {
-          setError('This account has been deactivated. Please contact support.');
-          setIsLoading(false);
-          return false;
-        }
-        setCurrentUser(user);
-        localStorage.setItem('tutoring_current_user', JSON.stringify(user));
-        setIsLoading(false);
-        return true;
-      } else {
-        setError('Invalid email or password. Please try again or use the quick demo access buttons.');
-        setIsLoading(false);
-        return false;
-      }
+      const userObj = {
+        id: data.user.id,
+        name: data.user.name,
+        email: data.user.email,
+        phone: data.user.phone,
+        role: data.user.role,
+      };
+
+      localStorage.setItem('tutoring_jwt_token', data.token);
+      localStorage.setItem('tutoring_current_user', JSON.stringify(userObj));
+      setCurrentUser(userObj);
+      setIsLoading(false);
+      return true;
     } catch (err) {
-      setError('An error occurred during login. Please try again.');
+      setError(err.message || 'Invalid email or password. Please try again.');
       setIsLoading(false);
       return false;
     }
@@ -53,6 +70,7 @@ export const AuthProvider = ({ children }) => {
 
   const logout = () => {
     setCurrentUser(null);
+    localStorage.removeItem('tutoring_jwt_token');
     localStorage.removeItem('tutoring_current_user');
   };
 

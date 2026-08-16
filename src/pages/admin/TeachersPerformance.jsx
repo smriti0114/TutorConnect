@@ -1,37 +1,46 @@
 import React, { useState, useEffect } from 'react';
-import { mockDb } from '../../services/mockDb';
+import { apiClient } from '../../api/apiClient';
 import { Star, AlertCircle } from 'lucide-react';
 
 export const AdminTeachersPerformance = () => {
   const [tutorScores, setTutorScores] = useState([]);
 
   useEffect(() => {
-    const teachersList = mockDb.getTeachers();
-    const classes = mockDb.getClasses();
-    const userList = mockDb.getUsers();
+    const fetchTeacherPerformance = async () => {
+      try {
+        const teachersList = await apiClient.get('/teachers');
+        const classes = await apiClient.get('/bookings');
 
-    const scores = teachersList.map(teacher => {
-      const u = userList.find(user => user.id === teacher.userId);
-      const myClasses = classes.filter(c => c.teacherId === teacher.userId);
-      
-      const ratedClasses = myClasses.filter(c => c.ratingByParent !== undefined);
-      const ratingSum = ratedClasses.reduce((acc, curr) => acc + (curr.ratingByParent || 5), 0);
-      const averageRating = ratedClasses.length > 0 ? ratingSum / ratedClasses.length : 5.0;
+        const scores = teachersList.map(teacher => {
+          const tutorUserId = teacher.userId;
+          const myClasses = classes.filter(c => c.teacherId && (c.teacherId._id === tutorUserId || c.teacherId.id === tutorUserId));
+          
+          const ratedClasses = myClasses.filter(c => c.ratingByParent !== undefined && c.ratingByParent !== null);
+          const ratingSum = ratedClasses.reduce((acc, curr) => acc + (curr.ratingByParent || 5), 0);
+          const averageRating = ratedClasses.length > 0 ? ratingSum / ratedClasses.length : 5.0;
 
-      const completedClassesCount = myClasses.filter(c => c.status === 'completed').length;
+          const completedClassesCount = myClasses.filter(c => c.status === 'completed').length;
 
-      return {
-        id: teacher.id,
-        tutorName: u ? u.name : 'Tutor',
-        avatar: u ? u.avatar : '',
-        rating: averageRating,
-        totalClasses: myClasses.length,
-        completedClasses: completedClassesCount,
-        reviewCount: ratedClasses.length,
-      };
-    });
+          // Compute avatar fallback or seed URL
+          const avatar = `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(teacher.name)}`;
 
-    setTutorScores(scores);
+          return {
+            id: teacher.id || teacher._id,
+            tutorName: teacher.name || 'Tutor',
+            avatar: teacher.avatar || avatar,
+            rating: averageRating,
+            totalClasses: myClasses.length,
+            completedClasses: completedClassesCount,
+            reviewCount: ratedClasses.length,
+          };
+        });
+
+        setTutorScores(scores);
+      } catch (err) {
+        console.error('Failed to load teacher performance logs:', err);
+      }
+    };
+    fetchTeacherPerformance();
   }, []);
 
   return (

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { mockDb } from '../../services/mockDb';
+import { apiClient } from '../../api/apiClient';
 import { 
   Home, Calendar, Users, BookOpen, Clock, DollarSign, 
   Bell, LogOut, Menu, X, ChevronRight, Sliders
@@ -16,19 +16,30 @@ export const TeacherLayout = ({ children }) => {
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  useEffect(() => {
+  const fetchNotifs = async () => {
     if (currentUser) {
-      const allNotifs = mockDb.getNotifications();
-      const teacherNotifs = allNotifs.filter(n => n.recipientUserId === currentUser.id);
-      setNotifications(teacherNotifs);
+      try {
+        const data = await apiClient.get('/notifications');
+        setNotifications(data.map(n => ({ ...n, id: n._id })));
+      } catch (err) {
+        console.error('Failed to load layout notifications:', err);
+      }
     }
+  };
+
+  useEffect(() => {
+    fetchNotifs();
   }, [currentUser, location]);
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
-  const handleMarkAsRead = (id) => {
-    mockDb.markNotificationRead(id);
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+  const handleMarkAsRead = async (id) => {
+    try {
+      await apiClient.put(`/notifications/${id}/read`);
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   const navItems = [

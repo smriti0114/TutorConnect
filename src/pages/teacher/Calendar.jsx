@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { mockDb } from '../../services/mockDb';
+import { apiClient } from '../../api/apiClient';
 import { Clock, ChevronLeft, ChevronRight } from 'lucide-react';
 
 export const TeacherCalendar = () => {
@@ -10,11 +10,18 @@ export const TeacherCalendar = () => {
 
   useEffect(() => {
     if (currentUser) {
-      const allClass = mockDb.getClasses();
-      const myClasses = allClass.filter(
-        c => c.teacherId === currentUser.id && c.bookingStatus === 'approved'
-      );
-      setClasses(myClasses);
+      const fetchClasses = async () => {
+        try {
+          const data = await apiClient.get('/bookings');
+          const myClasses = data
+            .filter(c => c.teacherId && (c.teacherId._id === currentUser.id || c.teacherId.id === currentUser.id) && c.bookingStatus === 'approved')
+            .map(c => ({ ...c, id: c._id }));
+          setClasses(myClasses);
+        } catch (err) {
+          console.error('Failed to load teacher calendar:', err);
+        }
+      };
+      fetchClasses();
     }
   }, [currentUser]);
 
@@ -43,14 +50,14 @@ export const TeacherCalendar = () => {
       .sort((a, b) => a.startTime.localeCompare(b.startTime));
   };
 
-  const getStudentName = (id) => {
-    const children = mockDb.getChildren();
-    return children.find(c => c.id === id)?.name || 'Student';
+  const getStudentName = (child) => {
+    if (child && typeof child === 'object') return child.name;
+    return 'Student';
   };
 
-  const getActivityName = (id) => {
-    const activities = mockDb.getActivities();
-    return activities.find(a => a.id === id)?.name || 'Extracurricular';
+  const getActivityName = (act) => {
+    if (act && typeof act === 'object') return act.name;
+    return 'Extracurricular';
   };
 
   return (

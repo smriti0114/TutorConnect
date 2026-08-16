@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { mockDb } from '../../services/mockDb';
+import { apiClient } from '../../api/apiClient';
 import { DollarSign, Award, Clock, ArrowUpRight, AlertCircle } from 'lucide-react';
 
 export const TeacherEarnings = () => {
@@ -12,37 +12,45 @@ export const TeacherEarnings = () => {
 
   useEffect(() => {
     if (currentUser) {
-      const classes = mockDb.getClasses();
-      const myClasses = classes.filter(
-        c => c.teacherId === currentUser.id && c.status === 'completed'
-      ).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      
-      setCompletedClasses(myClasses);
+      const fetchEarnings = async () => {
+        try {
+          const data = await apiClient.get('/bookings');
+          const myClasses = data
+            .filter(c => c.teacherId && (c.teacherId._id === currentUser.id || c.teacherId.id === currentUser.id) && c.status === 'completed')
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          
+          setCompletedClasses(myClasses);
 
-      const activities = mockDb.getActivities();
-      let total = 0;
-      const historyList = myClasses.map(c => {
-        const act = activities.find(a => a.id === c.activityId);
-        const rate = act ? act.pricePerClass : 40;
-        total += rate;
-        
-        return {
-          id: c.id,
-          date: c.date,
-          studentName: getStudentName(c.childId),
-          activityName: act ? act.name : 'Extracurricular Class',
-          rate,
-        };
-      });
+          let total = 0;
+          const historyList = myClasses.map(c => {
+            let rate = 40;
+            if (c.activityId && typeof c.activityId === 'object') {
+              rate = c.activityId.pricePerClass || 40;
+            }
+            total += rate;
+            
+            return {
+              id: c._id,
+              date: c.date,
+              studentName: getStudentName(c.childId),
+              activityName: c.activityId && typeof c.activityId === 'object' ? c.activityId.name : 'Extracurricular Class',
+              rate,
+            };
+          });
 
-      setTotalEarnings(total);
-      setEarningsHistory(historyList);
+          setTotalEarnings(total);
+          setEarningsHistory(historyList);
+        } catch (err) {
+          console.error('Failed to load teacher earnings:', err);
+        }
+      };
+      fetchEarnings();
     }
   }, [currentUser]);
 
-  const getStudentName = (id) => {
-    const children = mockDb.getChildren();
-    return children.find(c => c.id === id)?.name || 'Student';
+  const getStudentName = (child) => {
+    if (child && typeof child === 'object') return child.name;
+    return 'Student';
   };
 
   return (

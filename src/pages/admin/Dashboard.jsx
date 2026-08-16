@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { mockDb } from '../../services/mockDb';
+import { apiClient } from '../../api/apiClient';
 import { Users, Calendar, Activity, CreditCard, Award, ArrowUpRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -11,35 +11,35 @@ export const AdminDashboard = () => {
   const [pendingPaymentsCount, setPendingPaymentsCount] = useState(0);
 
   useEffect(() => {
-    mockDb.initialize();
+    const fetchDashboardKPIs = async () => {
+      try {
+        const childrenList = await apiClient.get('/children');
+        setTotalStudents(childrenList.length);
 
-    // Students count
-    const childrenList = mockDb.getChildren().filter(c => c.active);
-    setTotalStudents(childrenList.length);
+        const tutorsList = await apiClient.get('/teachers');
+        setTotalTutors(tutorsList.length);
 
-    // Tutors count
-    const tutorsList = mockDb.getTeachers();
-    setTotalTutors(tutorsList.length);
+        const bookings = await apiClient.get('/bookings');
+        const active = bookings.filter(c => c.bookingStatus === 'approved' && (c.status === 'upcoming' || c.status === 'rescheduled'));
+        setActiveClassesCount(active.length);
 
-    // Active classes count
-    const classes = mockDb.getClasses();
-    const active = classes.filter(c => c.bookingStatus === 'approved' && (c.status === 'upcoming' || c.status === 'rescheduled'));
-    setActiveClassesCount(active.length);
+        const payments = await apiClient.get('/payments');
+        const paidThisMonth = payments.filter(p => {
+          if (p.status !== 'paid' || !p.paymentDate) return false;
+          const payDate = new Date(p.paymentDate);
+          const now = new Date();
+          return payDate.getMonth() === now.getMonth() && payDate.getFullYear() === now.getFullYear();
+        });
+        const revenue = paidThisMonth.reduce((acc, curr) => acc + curr.amount, 0);
+        setMonthlyRevenue(revenue);
 
-    // Monthly revenue calculation
-    const payments = mockDb.getPayments();
-    const paidThisMonth = payments.filter(p => {
-      if (p.status !== 'paid' || !p.paymentDate) return false;
-      const payDate = new Date(p.paymentDate);
-      const now = new Date();
-      return payDate.getMonth() === now.getMonth() && payDate.getFullYear() === now.getFullYear();
-    });
-    const revenue = paidThisMonth.reduce((acc, curr) => acc + curr.amount, 0);
-    setMonthlyRevenue(revenue);
-
-    // Pending payments count
-    const pendingPayments = payments.filter(p => p.status === 'pending' || p.status === 'overdue');
-    setPendingPaymentsCount(pendingPayments.length);
+        const pendingPayments = payments.filter(p => p.status === 'pending' || p.status === 'overdue');
+        setPendingPaymentsCount(pendingPayments.length);
+      } catch (err) {
+        console.error('Failed to load admin dashboard KPIs:', err);
+      }
+    };
+    fetchDashboardKPIs();
   }, []);
 
   return (

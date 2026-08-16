@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { mockDb } from '../../services/mockDb';
+import { apiClient } from '../../api/apiClient';
 import { 
   ChevronLeft, Plus, AlertCircle 
 } from 'lucide-react';
@@ -25,65 +25,77 @@ export const TeacherStudentDetail = () => {
 
   useEffect(() => {
     if (studentId && currentUser) {
-      const allChildren = mockDb.getChildren();
-      const child = allChildren.find(c => c.id === studentId);
-      if (child) {
-        // Enforce authorization checks
-        const enrollments = mockDb.getEnrollments();
-        const hasEnrollment = enrollments.some(e => e.childId === studentId && e.teacherId === currentUser.id);
+      const fetchStudentDetails = async () => {
+        try {
+          // 1. Fetch child by ID (which includes populated parent details)
+          const child = await apiClient.get(`/children/${studentId}`);
+          if (child) {
+            setStudent({ ...child, id: child._id });
+            setParent(child.parentId || null);
 
-        const classes = mockDb.getClasses();
-        const childClasses = classes.filter(
-          c => c.childId === studentId && c.teacherId === currentUser.id
-        ).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            // 2. Fetch classes to check authorization & list sessions
+            const bookings = await apiClient.get('/bookings');
+            const childClasses = bookings
+              .filter(c => c.childId && (c.childId._id === studentId || c.childId.id === studentId) && c.teacherId && (c.teacherId._id === currentUser.id || c.teacherId.id === currentUser.id))
+              .map(c => ({ ...c, id: c._id }))
+              .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-        if (!hasEnrollment && childClasses.length === 0) {
+            // Authorization: teacher must be assigned to at least one class
+            if (childClasses.length === 0) {
+              setIsAuthorized(false);
+              return;
+            }
+
+            setIsAuthorized(true);
+            setStudentClasses(childClasses);
+
+            // 3. Fetch homework
+            const homework = await apiClient.get('/homework');
+            const childHw = homework
+              .filter(h => h.childId && (h.childId._id === studentId || h.childId.id === studentId) && h.teacherId && (h.teacherId._id === currentUser.id || h.teacherId.id === currentUser.id))
+              .map(h => ({ ...h, id: h._id }))
+              .sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
+            setStudentHomework(childHw);
+          } else {
+            setIsAuthorized(false);
+          }
+        } catch (err) {
+          console.error('Failed to fetch student details:', err);
           setIsAuthorized(false);
-          return;
         }
-
-        setIsAuthorized(true);
-        setStudent(child);
-        
-        const users = mockDb.getUsers();
-        const pUser = users.find(u => u.id === child.parentId);
-        setParent(pUser || null);
-        setStudentClasses(childClasses);
-
-        const homework = mockDb.getHomework();
-        const childHw = homework.filter(
-          h => h.childId === studentId && h.teacherId === currentUser.id
-        ).sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
-        setStudentHomework(childHw);
-      }
+      };
+      fetchStudentDetails();
     }
   }, [studentId, currentUser, assignSuccess]);
 
-  const handleAssignHw = (e) => {
+  const handleAssignHw = async (e) => {
     e.preventDefault();
     if (!student || !currentUser || !hwDescription || !hwDueDate) return;
 
-    mockDb.assignHomework(
-      currentUser.id,
-      student.id,
-      hwClassSessionId || `cls-custom-${Date.now()}`,
-      hwDescription,
-      hwDueDate
-    );
+    try {
+      await apiClient.post('/homework', {
+        childId: student.id || student._id,
+        description: hwDescription,
+        dueDate: hwDueDate,
+        classSessionId: hwClassSessionId || undefined,
+      });
 
-    setAssignSuccess(true);
-    setTimeout(() => {
-      setAssignSuccess(false);
-      setShowHwForm(false);
-      setHwDescription('');
-      setHwDueDate('');
-      setHwClassSessionId('');
-    }, 1500);
+      setAssignSuccess(true);
+      setTimeout(() => {
+        setAssignSuccess(false);
+        setShowHwForm(false);
+        setHwDescription('');
+        setHwDueDate('');
+        setHwClassSessionId('');
+      }, 1500);
+    } catch (err) {
+      alert(err.message || 'Failed to assign homework.');
+    }
   };
 
-  const getActivityName = (id) => {
-    const activities = mockDb.getActivities();
-    return activities.find(a => a.id === id)?.name || 'Extracurricular';
+  const getActivityName = (act) => {
+    if (act && typeof act === 'object') return act.name;
+    return 'Extracurricular';
   };
 
   if (!isAuthorized) {

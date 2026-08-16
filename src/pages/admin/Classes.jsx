@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { mockDb } from '../../services/mockDb';
+import { apiClient } from '../../api/apiClient';
 import { Calendar, Check, X, Clock, Edit2 } from 'lucide-react';
 
 export const AdminClasses = () => {
   const [classes, setClasses] = useState([]);
   const [teachers, setTeachers] = useState([]);
-  const [users, setUsers] = useState([]);
   const [activeTab, setActiveTab] = useState('pending');
 
   // Reschedule & Reassign states
@@ -15,75 +14,88 @@ export const AdminClasses = () => {
   const [newTeacherId, setNewTeacherId] = useState('');
   const [successMsg, setSuccessMsg] = useState(null);
 
-  const fetchClasses = () => {
-    setClasses(mockDb.getClasses());
-    setTeachers(mockDb.getTeachers());
-    setUsers(mockDb.getUsers());
+  const fetchClasses = async () => {
+    try {
+      const bookingsData = await apiClient.get('/bookings');
+      setClasses(bookingsData.map(c => ({ ...c, id: c._id })));
+
+      const teachersData = await apiClient.get('/teachers');
+      setTeachers(teachersData);
+    } catch (err) {
+      console.error('Failed to load classes or teachers catalog:', err);
+    }
   };
 
   useEffect(() => {
     fetchClasses();
   }, []);
 
-  const handleApprove = (id) => {
-    mockDb.approveBooking(id);
-    fetchClasses();
-  };
-
-  const handleReject = (id) => {
-    if (window.confirm('Are you sure you want to decline this booking request? This will notify the parent.')) {
-      mockDb.rejectBooking(id);
+  const handleApprove = async (id) => {
+    try {
+      await apiClient.put(`/bookings/${id}/approve`);
       fetchClasses();
+    } catch (err) {
+      alert(err.message || 'Failed to approve booking.');
     }
   };
 
-  const handleRescheduleSubmit = (e) => {
+  const handleReject = async (id) => {
+    if (window.confirm('Are you sure you want to decline this booking request? This will notify the parent.')) {
+      try {
+        await apiClient.put(`/bookings/${id}/reject`);
+        fetchClasses();
+      } catch (err) {
+        alert(err.message || 'Failed to reject booking.');
+      }
+    }
+  };
+
+  const handleRescheduleSubmit = async (e) => {
     e.preventDefault();
     if (!selectedClass) return;
 
-    if (newDate && newTime) {
-      mockDb.rescheduleClass(selectedClass.id, newDate, newTime);
+    try {
+      if (newDate && newTime) {
+        await apiClient.put(`/bookings/${selectedClass.id || selectedClass._id}/reschedule`, {
+          date: newDate,
+          startTime: newTime,
+        });
+      }
+
+      if (newTeacherId) {
+        await apiClient.put(`/bookings/${selectedClass.id || selectedClass._id}/reassign`, {
+          teacherId: newTeacherId,
+        });
+      }
+
+      setSuccessMsg('Booking adjustments updated successfully.');
+      fetchClasses();
+      
+      setTimeout(() => {
+        setSelectedClass(null);
+        setSuccessMsg(null);
+        setNewDate('');
+        setNewTime('');
+        setNewTeacherId('');
+      }, 1500);
+    } catch (err) {
+      alert(err.message || 'Failed to update schedule parameters.');
     }
-
-    if (newTeacherId) {
-      const allClass = mockDb.getClasses();
-      const updated = allClass.map(c => 
-        c.id === selectedClass.id ? { ...c, teacherId: newTeacherId } : c
-      );
-      mockDb.saveClasses(updated);
-
-      mockDb.addNotification(
-        newTeacherId,
-        'class',
-        'New Class Reassigned',
-        `An administrator reassigned you a class on ${selectedClass.date}.`
-      );
-    }
-
-    setSuccessMsg('Booking adjustments updated successfully.');
-    fetchClasses();
-    
-    setTimeout(() => {
-      setSelectedClass(null);
-      setSuccessMsg(null);
-      setNewDate('');
-      setNewTime('');
-      setNewTeacherId('');
-    }, 1500);
   };
 
-  const getStudentName = (id) => {
-    const children = mockDb.getChildren();
-    return children.find(c => c.id === id)?.name || 'Student';
+  const getStudentName = (child) => {
+    if (child && typeof child === 'object') return child.name;
+    return 'Student';
   };
 
-  const getTeacherName = (id) => {
-    return users.find(u => u.id === id)?.name || 'Tutor';
+  const getTeacherName = (teacher) => {
+    if (teacher && typeof teacher === 'object') return teacher.name;
+    return 'Tutor';
   };
 
-  const getActivityName = (id) => {
-    const activities = mockDb.getActivities();
-    return activities.find(a => a.id === id)?.name || 'Extracurricular';
+  const getActivityName = (act) => {
+    if (act && typeof act === 'object') return act.name;
+    return 'Extracurricular';
   };
 
   const filteredClasses = classes.filter(c => {
@@ -225,10 +237,10 @@ export const AdminClasses = () => {
                   >
                     <option value="">Keep current tutor ({getTeacherName(selectedClass.teacherId)})</option>
                     {teachers
-                      .filter(t => t.specialtyActivityIds.includes(selectedClass.activityId) && t.userId !== selectedClass.teacherId)
+                      .filter(t => t.specialtyActivityIds.includes(selectedClass.activityId?._id || selectedClass.activityId) && t.userId !== (selectedClass.teacherId?._id || selectedClass.teacherId))
                       .map(t => (
                         <option key={t.userId} value={t.userId}>
-                          {getTeacherName(t.userId)}
+                          {t.name}
                         </option>
                       ))}
                   </select>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useChild } from '../../context/ChildContext';
-import { mockDb } from '../../services/mockDb';
+import { apiClient } from '../../api/apiClient';
 import { BookOpen, Clock, FileText, AlertCircle } from 'lucide-react';
 
 export const ParentHomework = () => {
@@ -18,27 +18,39 @@ export const ParentHomework = () => {
 
   useEffect(() => {
     if (activeChild) {
-      const allHomework = mockDb.getHomework();
-      const childHw = allHomework.filter(h => h.childId === activeChild.id);
-      setHomeworkList(childHw);
+      const fetchHomework = async () => {
+        try {
+          const data = await apiClient.get('/homework');
+          const childHw = data
+            .filter(h => h.childId && (h.childId._id === activeChild.id || h.childId.id === activeChild.id))
+            .map(h => ({ ...h, id: h._id }));
+          setHomeworkList(childHw);
+        } catch (err) {
+          console.error('Failed to load homework:', err);
+        }
+      };
+      fetchHomework();
     }
   }, [activeChild, submitSuccess]);
 
-  const getActivityName = (id) => {
-    const activities = mockDb.getActivities();
-    return activities.find(a => a.id === id)?.name || 'Extracurricular';
+  const getActivityName = (act) => {
+    if (act && typeof act === 'object') return act.name;
+    return 'Extracurricular';
   };
 
-  const getTeacherName = (id) => {
-    const users = mockDb.getUsers();
-    return users.find(u => u.id === id)?.name || 'Tutor';
+  const getTeacherName = (tutor) => {
+    if (tutor && typeof tutor === 'object') return tutor.name;
+    return 'Tutor';
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!selectedHw) return;
     setIsSubmitting(true);
-    setTimeout(() => {
-      mockDb.submitHomework(selectedHw.id, notes, fileName || 'uploaded_work.pdf');
+    try {
+      await apiClient.put(`/homework/${selectedHw.id || selectedHw._id}/complete`, {
+        submissionNotes: notes,
+        attachmentName: fileName || 'uploaded_work.pdf',
+      });
       setIsSubmitting(false);
       setSubmitSuccess(true);
       setTimeout(() => {
@@ -47,7 +59,10 @@ export const ParentHomework = () => {
         setNotes('');
         setFileName('');
       }, 1500);
-    }, 1200);
+    } catch (err) {
+      alert(err.message || 'Failed to submit homework.');
+      setIsSubmitting(false);
+    }
   };
 
   const filteredHw = homeworkList.filter(h => 

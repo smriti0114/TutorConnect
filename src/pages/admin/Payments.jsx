@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { mockDb } from '../../services/mockDb';
+import { apiClient } from '../../api/apiClient';
 import { useAuth } from '../../context/AuthContext';
 import { Search, Clipboard } from 'lucide-react';
 
@@ -7,8 +7,6 @@ export const AdminPayments = () => {
   const { currentUser } = useAuth();
   
   const [payments, setPayments] = useState([]);
-  const [children, setChildren] = useState([]);
-  const [users, setUsers] = useState([]);
   const [activeTab, setActiveTab] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -19,17 +17,20 @@ export const AdminPayments = () => {
   const [txnDate, setTxnDate] = useState(new Date().toISOString().split('T')[0]);
   const [success, setSuccess] = useState(false);
 
-  const fetchPayments = () => {
-    setPayments(mockDb.getPayments());
-    setChildren(mockDb.getChildren());
-    setUsers(mockDb.getUsers());
+  const fetchPayments = async () => {
+    try {
+      const data = await apiClient.get('/payments');
+      setPayments(data.map(p => ({ ...p, id: p._id })));
+    } catch (err) {
+      console.error('Failed to fetch payments:', err);
+    }
   };
 
   useEffect(() => {
     fetchPayments();
   }, [success]);
 
-  const handleMarkPaidSubmit = (e) => {
+  const handleMarkPaidSubmit = async (e) => {
     e.preventDefault();
     if (!selectedPayment) return;
 
@@ -41,39 +42,42 @@ export const AdminPayments = () => {
 
     // Require confirmation before changing status
     if (window.confirm(`Are you sure you want to mark this payment of $${selectedPayment.amount} as Paid?`)) {
-      mockDb.markPaymentPaid(
-        selectedPayment.id,
-        paymentMethod,
-        txnRef || `MANUAL-${Date.now()}`,
-        txnDate
-      );
+      try {
+        await apiClient.put(`/payments/${selectedPayment.id || selectedPayment._id}/mark-paid`, {
+          paymentMethod,
+          paymentReference: txnRef || `MANUAL-${Date.now()}`,
+          paymentDate: txnDate,
+        });
 
-      setSuccess(true);
-      fetchPayments();
+        setSuccess(true);
+        fetchPayments();
 
-      setTimeout(() => {
-        setSuccess(false);
-        setSelectedPayment(null);
-        setTxnRef('');
-      }, 1500);
+        setTimeout(() => {
+          setSuccess(false);
+          setSelectedPayment(null);
+          setTxnRef('');
+        }, 1500);
+      } catch (err) {
+        alert(err.message || 'Failed to update payment status.');
+      }
     }
   };
 
-  const getStudentName = (childId) => {
-    return children.find(c => c.id === childId)?.name || 'Student';
+  const getStudentName = (child) => {
+    if (child && typeof child === 'object') return child.name;
+    return 'Student';
   };
 
-  const getParentName = (parentId) => {
-    return users.find(u => u.id === parentId)?.name || 'Parent';
+  const getParentName = (parent) => {
+    if (parent && typeof parent === 'object') return parent.name;
+    return 'Parent';
   };
 
-  const getActivityName = (enrollmentId) => {
-    if (!enrollmentId) return 'General Tuition';
-    const enrollments = mockDb.getEnrollments();
-    const enroll = enrollments.find(e => e.id === enrollmentId);
-    if (!enroll) return 'Extracurricular Class';
-    const activities = mockDb.getActivities();
-    return activities.find(a => a.id === enroll.activityId)?.name || 'Extracurricular';
+  const getActivityName = (classSession) => {
+    if (classSession && classSession.activityId && typeof classSession.activityId === 'object') {
+      return classSession.activityId.name;
+    }
+    return 'Extracurricular Class';
   };
 
   const filteredPayments = payments.filter(p => {
@@ -93,8 +97,8 @@ export const AdminPayments = () => {
     const rows = payments.map(p => {
       const sName = getStudentName(p.childId);
       const pName = getParentName(p.parentId);
-      const activity = getActivityName(p.enrollmentId);
-      return `${p.id},"${sName}","${pName}","${activity}",${p.amount},${p.status},${p.dueDate},${p.paymentDate || ''},${p.paymentMethod || ''},"${p.reference || ''}"`;
+      const activity = getActivityName(p.classSessionId);
+      return `${p.id},"${sName}","${pName}","${activity}",${p.amount},${p.status},${p.dueDate},${p.paymentDate || ''},${p.paymentMethod || ''},"${p.paymentReference || p.reference || ''}"`;
     }).join('\n');
 
     const blob = new Blob([headers + rows], { type: 'text/csv;charset=utf-8;' });
@@ -190,7 +194,7 @@ export const AdminPayments = () => {
                     <p className="text-stone-400 text-[10px] mt-0.5">Parent: {getParentName(p.parentId)}</p>
                   </td>
                   <td className="px-6 py-4 font-bold text-stone-800">
-                    {getActivityName(p.enrollmentId)}
+                    {getActivityName(p.classSessionId)}
                   </td>
                   <td className="px-6 py-4 font-semibold text-stone-600">
                     {new Date(p.dueDate).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -217,7 +221,7 @@ export const AdminPayments = () => {
                       </button>
                     ) : (
                       <span className="text-[10px] text-stone-400 italic">
-                        {p.paymentMethod} ({p.reference?.substring(0, 10)})
+                        {p.paymentMethod} ({(p.paymentReference || p.reference)?.substring(0, 10)})
                       </span>
                     )}
                   </td>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { mockDb } from '../../services/mockDb';
+import { apiClient } from '../../api/apiClient';
 import { Users, Search, ChevronRight, BookOpen } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -12,32 +12,48 @@ export const TeacherStudents = () => {
 
   useEffect(() => {
     if (currentUser) {
-      const classes = mockDb.getClasses();
-      const myClasses = classes.filter(c => c.teacherId === currentUser.id);
-      
-      const uniqueChildIds = Array.from(new Set(myClasses.map(c => c.childId)));
-      const children = mockDb.getChildren();
-      
-      const myStudents = children.filter(c => uniqueChildIds.includes(c.id) && c.active);
-      setStudents(myStudents);
+      const fetchStudents = async () => {
+        try {
+          const bookings = await apiClient.get('/bookings');
+          const myClasses = bookings.filter(c => c.teacherId && (c.teacherId._id === currentUser.id || c.teacherId.id === currentUser.id));
+          const uniqueChildIds = new Set();
+          const tempStudents = [];
+          
+          myClasses.forEach(c => {
+            if (c.childId && typeof c.childId === 'object' && !uniqueChildIds.has(c.childId._id)) {
+              uniqueChildIds.add(c.childId._id);
+              tempStudents.push({
+                id: c.childId._id,
+                name: c.childId.name,
+                age: c.childId.age,
+                avatar: c.childId.avatar,
+                classes: myClasses.filter(mc => mc.childId && mc.childId._id === c.childId._id)
+              });
+            }
+          });
+          setStudents(tempStudents);
+        } catch (err) {
+          console.error('Failed to load teacher students:', err);
+        }
+      };
+      fetchStudents();
     }
   }, [currentUser]);
 
   const getStudentActivities = (childId) => {
-    const enrollments = mockDb.getEnrollments();
-    const myEnroll = enrollments.filter(e => e.childId === childId && e.teacherId === currentUser?.id);
-    const activities = mockDb.getActivities();
-    
-    return myEnroll.map(e => {
-      const act = activities.find(a => a.id === e.activityId);
-      return act ? act.name : '';
-    }).filter(name => name !== '').join(', ');
+    const student = students.find(s => s.id === childId);
+    if (!student) return '';
+    const actNames = student.classes
+      .map(c => c.activityId && typeof c.activityId === 'object' ? c.activityId.name : '')
+      .filter((v, i, self) => v && self.indexOf(v) === i);
+    return actNames.join(', ') || 'Extracurricular Class';
   };
 
   const getNextClassString = (childId) => {
-    const classes = mockDb.getClasses();
-    const upcoming = classes
-      .filter(c => c.childId === childId && c.teacherId === currentUser?.id && c.status === 'upcoming' && c.bookingStatus === 'approved')
+    const student = students.find(s => s.id === childId);
+    if (!student) return 'No upcoming class scheduled';
+    const upcoming = student.classes
+      .filter(c => c.status === 'upcoming' && c.bookingStatus === 'approved')
       .sort((a, b) => new Date(`${a.date}T${a.startTime}`).getTime() - new Date(`${b.date}T${b.startTime}`).getTime());
 
     if (upcoming.length > 0) {
@@ -48,9 +64,10 @@ export const TeacherStudents = () => {
   };
 
   const getLatestNotesPreview = (childId) => {
-    const classes = mockDb.getClasses();
-    const completed = classes
-      .filter(c => c.childId === childId && c.teacherId === currentUser?.id && c.status === 'completed' && c.teacherNotes)
+    const student = students.find(s => s.id === childId);
+    if (!student) return 'No previous session notes logged.';
+    const completed = student.classes
+      .filter(c => c.status === 'completed' && c.teacherNotes)
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     if (completed.length > 0) {
       return completed[0].teacherNotes;

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { mockDb } from '../../services/mockDb';
+import { apiClient } from '../../api/apiClient';
 import { Search, UserPlus, ToggleLeft, ToggleRight, Edit2 } from 'lucide-react';
 
 export const AdminUsers = () => {
@@ -27,16 +27,23 @@ export const AdminUsers = () => {
   const [editAge, setEditAge] = useState(8);
   const [editNotes, setEditNotes] = useState('');
 
-  const fetchRegistry = () => {
-    setUsers(mockDb.getUsers());
-    setChildren(mockDb.getChildren());
+  const fetchRegistry = async () => {
+    try {
+      const usersData = await apiClient.get('/auth/list');
+      setUsers(usersData.map(u => ({ ...u, id: u._id })));
+
+      const childrenData = await apiClient.get('/children');
+      setChildren(childrenData.map(c => ({ ...c, id: c._id })));
+    } catch (err) {
+      console.error('Failed to load user and child databases:', err);
+    }
   };
 
   useEffect(() => {
     fetchRegistry();
   }, []);
 
-  const handleAddUser = (e) => {
+  const handleAddUser = async (e) => {
     e.preventDefault();
     setError(null);
     setSuccess(false);
@@ -52,57 +59,39 @@ export const AdminUsers = () => {
       return;
     }
 
-    const newUserId = `u-${Date.now()}`;
-    const newUser = {
-      id: newUserId,
-      name,
-      email,
-      phone,
-      role,
-      password,
-      avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=${name}`,
-      active: true,
-    };
+    try {
+      await apiClient.post('/auth/admin-create', {
+        name,
+        email,
+        phone,
+        password,
+        role,
+      });
 
-    if (role === 'teacher') {
-      const teachersList = mockDb.getTeachers();
-      const newTeacherProfile = {
-        id: `tp-${Date.now()}`,
-        userId: newUserId,
-        specialtyActivityIds: [],
-        bio: 'Bio details not supplied yet.',
-        experience: 'New Tutor',
-        rating: 5.0,
-        availability: [
-          { dayOfWeek: 'Monday', timeSlots: ['14:00', '15:00', '16:00'] },
-          { dayOfWeek: 'Wednesday', timeSlots: ['14:00', '15:00', '16:00'] },
-        ],
-      };
-      mockDb.saveTeachers([...teachersList, newTeacherProfile]);
+      setSuccess(true);
+      fetchRegistry();
+
+      setTimeout(() => {
+        setSuccess(false);
+        setShowAddForm(false);
+        setName('');
+        setEmail('');
+        setPhone('');
+        setPassword('');
+      }, 1500);
+    } catch (err) {
+      setError(err.message || 'Failed to create user.');
     }
-
-    mockDb.saveUsers([...users, newUser]);
-    setSuccess(true);
-    fetchRegistry();
-
-    setTimeout(() => {
-      setSuccess(false);
-      setShowAddForm(false);
-      setName('');
-      setEmail('');
-      setPhone('');
-      setPassword('');
-    }, 1500);
   };
 
-  const handleToggleActive = (userId) => {
+  const handleToggleActive = async (userId) => {
     if (window.confirm('Are you sure you want to toggle the active status of this user?')) {
-      const list = mockDb.getUsers();
-      const updated = list.map(u => 
-        u.id === userId ? { ...u, active: !u.active } : u
-      );
-      mockDb.saveUsers(updated);
-      fetchRegistry();
+      try {
+        await apiClient.put(`/auth/${userId}/toggle-active`);
+        fetchRegistry();
+      } catch (err) {
+        alert(err.message || 'Failed to toggle status.');
+      }
     }
   };
 
@@ -111,7 +100,7 @@ export const AdminUsers = () => {
     setEditName(user.name);
     setEditEmail(user.email);
     setEditPhone(user.phone);
-    setEditPassword(user.password || '');
+    setEditPassword('');
   };
 
   const startEditChild = (child) => {
@@ -121,30 +110,31 @@ export const AdminUsers = () => {
     setEditNotes(child.notes || '');
   };
 
-  const handleSaveEdit = (e) => {
+  const handleSaveEdit = async (e) => {
     e.preventDefault();
     if (!editingUser) return;
 
-    if (editingUser.parentId !== undefined) {
-      const childrenList = mockDb.getChildren();
-      const updated = childrenList.map(c => 
-        c.id === editingUser.id 
-          ? { ...c, name: editName, age: Number(editAge), notes: editNotes } 
-          : c
-      );
-      mockDb.saveChildren(updated);
-    } else {
-      const usersList = mockDb.getUsers();
-      const updated = usersList.map(u => 
-        u.id === editingUser.id 
-          ? { ...u, name: editName, email: editEmail, phone: editPhone, password: editPassword || u.password } 
-          : u
-      );
-      mockDb.saveUsers(updated);
-    }
+    try {
+      if (editingUser.parentId !== undefined) {
+        await apiClient.put(`/children/${editingUser.id || editingUser._id}`, {
+          name: editName,
+          age: Number(editAge),
+          notes: editNotes,
+        });
+      } else {
+        await apiClient.put(`/auth/${editingUser.id || editingUser._id}`, {
+          name: editName,
+          email: editEmail,
+          phone: editPhone,
+          password: editPassword || undefined,
+        });
+      }
 
-    setEditingUser(null);
-    fetchRegistry();
+      setEditingUser(null);
+      fetchRegistry();
+    } catch (err) {
+      alert(err.message || 'Failed to save edits.');
+    }
   };
 
   const filteredUsers = users.filter(u => {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useChild } from '../../context/ChildContext';
 import { useAuth } from '../../context/AuthContext';
-import { mockDb } from '../../services/mockDb';
+import { apiClient } from '../../api/apiClient';
 import { Award, Clock, Star, Check } from 'lucide-react';
 
 export const ParentActivities = () => {
@@ -22,32 +22,56 @@ export const ParentActivities = () => {
   const [bookingError, setBookingError] = useState(null);
 
   useEffect(() => {
-    const list = mockDb.getActivities().filter(a => a.active);
-    setActivities(list);
-    if (list.length > 0) {
-      setSelectedActivity(list[0]);
-    }
+    const fetchActivities = async () => {
+      try {
+        const data = await apiClient.get('/activities');
+        const formatted = data.map(a => ({
+          id: a._id,
+          name: a.name,
+          description: a.description,
+          pricePerClass: a.pricePerClass,
+          active: a.active
+        }));
+        setActivities(formatted.filter(a => a.active));
+        if (formatted.filter(a => a.active).length > 0) {
+          setSelectedActivity(formatted.filter(a => a.active)[0]);
+        }
+      } catch (err) {
+        console.error('Failed to load activities:', err);
+      }
+    };
+    fetchActivities();
   }, []);
 
   useEffect(() => {
-    if (selectedActivity) {
-      const allTutors = mockDb.getTeachers();
-      const allUsers = mockDb.getUsers();
-      
-      const filtered = allTutors
-        .filter(t => t.specialtyActivityIds.includes(selectedActivity.id))
-        .map(t => {
-          const u = allUsers.find(user => user.id === t.userId);
-          return { profile: t, user: u };
-        })
-        .filter(t => t.user !== undefined);
-
-      setTutors(filtered);
-      setSelectedTutor(filtered[0] || null);
-      
-      setSelectedDay('');
-      setSelectedTime('');
-    }
+    const fetchTutors = async () => {
+      if (selectedActivity) {
+        try {
+          const allTutors = await apiClient.get('/teachers');
+          const filtered = allTutors
+            .filter(t => 
+              t.specialtyActivityIds.includes(selectedActivity.name.toLowerCase()) || 
+              t.specialtyActivityIds.includes(selectedActivity.id)
+            )
+            .map(t => ({
+              profile: t,
+              user: {
+                id: t.userId,
+                name: t.name,
+                email: t.email,
+                phone: t.phone
+              }
+            }));
+          setTutors(filtered);
+          setSelectedTutor(filtered[0] || null);
+          setSelectedDay('');
+          setSelectedTime('');
+        } catch (err) {
+          console.error('Failed to load tutors:', err);
+        }
+      }
+    };
+    fetchTutors();
   }, [selectedActivity]);
 
   useEffect(() => {
@@ -56,7 +80,7 @@ export const ParentActivities = () => {
     }
   }, [activeChild]);
 
-  const handleBooking = () => {
+  const handleBooking = async () => {
     setBookingError(null);
     if (!selectedTutor || !selectedActivity || !selectedDay || !selectedTime || !bookingChildId) {
       setBookingError('Please complete all selection steps.');
@@ -78,14 +102,13 @@ export const ParentActivities = () => {
       targetDate.setDate(today.getDate() + dayOffset);
       const dateStr = targetDate.toISOString().split('T')[0];
 
-      mockDb.createBookingRequest(
-        bookingChildId,
-        currentUser.id,
-        selectedTutor.user.id,
-        selectedActivity.id,
-        dateStr,
-        selectedTime
-      );
+      await apiClient.post('/bookings', {
+        childId: bookingChildId,
+        teacherId: selectedTutor.user.id,
+        activityId: selectedActivity.id,
+        date: dateStr,
+        startTime: selectedTime,
+      });
 
       setBookingSuccess(true);
       setTimeout(() => {
