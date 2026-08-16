@@ -18,8 +18,25 @@ dotenv.config();
 const app = express();
 
 // Middlewares
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5050'
+];
+if (process.env.CLIENT_URL) {
+  const cleanUrl = process.env.CLIENT_URL.replace(/\/$/, '');
+  allowedOrigins.push(cleanUrl);
+  allowedOrigins.push(cleanUrl + '/');
+}
+
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      return callback(null, true);
+    } else {
+      return callback(new Error('Not allowed by CORS: ' + origin));
+    }
+  },
   credentials: true
 }));
 app.use(express.json());
