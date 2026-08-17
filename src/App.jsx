@@ -12,6 +12,7 @@ import { AdminLayout } from './components/layout/AdminLayout';
 // Auth Pages
 import { Login } from './pages/Login';
 import { Signup } from './pages/Signup';
+import { Home } from './pages/Home';
 
 // Parent Pages
 import { ParentDashboard } from './pages/parent/Dashboard';
@@ -46,6 +47,7 @@ function App() {
       <AuthProvider>
         <Routes>
           {/* Public Routes */}
+          <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
 
@@ -115,7 +117,7 @@ function App() {
           />
 
           {/* Fallback route */}
-          <Route path="*" element={<Navigate to="/login" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>
