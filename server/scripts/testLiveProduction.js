@@ -1,7 +1,7 @@
-const BASE_URL = 'http://localhost:5050/api';
+const BASE_URL = 'https://tutorconnect-api-4vp0.onrender.com/api';
 
 console.log('======================================================');
-console.log('   TUTORCONNECT MONGO ATLAS END-TO-END AUDIT SUITE    ');
+console.log('   TUTORCONNECT LIVE RENDER API END-TO-END AUDIT      ');
 console.log('======================================================');
 
 let passedTests = 0;
@@ -268,7 +268,7 @@ async function runAudit() {
         teacherId: teacherIdToBook,
         activityId: activityIdToBook,
         date: '2022-01-01',
-        startTime: '14:00'
+        startTime: '11:00'
       })
     });
     if (pastRes.status === 400) {
@@ -328,8 +328,7 @@ async function runAudit() {
       headers: { 'Authorization': `Bearer ${adminToken}` }
     }).then(r => r.json());
     
-    // Find teacher specializing in the booked activity
-    const altTeacher = teachersData.find(t => t.userId !== teacherIdToBook && t.specialtyActivityIds.includes(specialtyName => true));
+    const altTeacher = teachersData.find(t => t.userId !== teacherIdToBook);
     if (altTeacher) {
       const res = await fetch(`${BASE_URL}/bookings/${bookingId}/reassign`, {
         method: 'PUT',
@@ -390,7 +389,7 @@ async function runAudit() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${teacherToken}` // Use real teacher token!
+        'Authorization': `Bearer ${teacherToken}`
       },
       body: JSON.stringify({
         childId,
@@ -435,7 +434,6 @@ async function runAudit() {
     });
     const payments = await res.json();
     
-    // Check bookings to see if payment was generated, or find any payment for this child
     const myPayment = payments.find(p => p.childId && (p.childId._id === childId || p.childId.id === childId || p.childId === childId));
     if (myPayment) {
       paymentId = myPayment._id;
@@ -460,7 +458,7 @@ async function runAudit() {
         report('Admin Marks Payment as Paid', 'FAILED', JSON.stringify(data));
       }
     } else {
-      report('Invoice/Payment Auto-generation Verification', 'FAILED', 'No invoice linked to this child class found. Seed payments list: ' + JSON.stringify(payments));
+      report('Invoice/Payment Auto-generation Verification', 'FAILED', 'No invoice linked to this child class found.');
     }
   } catch (err) {
     report('Invoice/Payment Auto-generation Verification', 'FAILED', err.message);
@@ -491,7 +489,7 @@ async function runAudit() {
   }
 
   console.log('======================================================');
-  console.log(`   AUDIT RESULTS: ${passedTests} PASSED, ${failedTests} FAILED    `);
+  console.log(`   LIVE AUDIT: ${passedTests} PASSED, ${failedTests} FAILED    `);
   console.log('======================================================');
   
   if (failedTests > 0) {
