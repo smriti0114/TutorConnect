@@ -57,7 +57,7 @@ export const AdminLayout = ({ children }) => {
   };
 
   return (
-    <div className="min-h-screen bg-stone-100/40 flex flex-col md:flex-row">
+    <div className="min-h-screen bg-stone-100/40 flex flex-col">
       {/* Mobile Header */}
       <header className="md:hidden sticky top-0 z-40 bg-stone-900 border-b border-stone-850 px-4 py-3 flex items-center justify-between shadow-md">
         <div className="flex items-center space-x-2">
@@ -111,7 +111,7 @@ export const AdminLayout = ({ children }) => {
 
       {/* Sidebar */}
       <aside className={`
-        fixed inset-y-0 left-0 z-50 w-64 bg-stone-950 text-stone-200 p-4 flex flex-col transform transition-transform duration-300 ease-in-out md:translate-x-0 md:static md:h-screen
+        fixed inset-y-0 left-0 z-50 w-64 bg-stone-950 text-stone-200 p-4 flex flex-col transform transition-transform duration-300 ease-in-out md:translate-x-0 md:h-screen
         ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         {/* Brand */}
@@ -125,7 +125,7 @@ export const AdminLayout = ({ children }) => {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 space-y-1">
+        <nav className="flex-1 space-y-1 overflow-y-auto pr-1">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname.startsWith(item.path);
@@ -179,7 +179,7 @@ export const AdminLayout = ({ children }) => {
       )}
 
       {/* Page Content wrapper */}
-      <div className="flex-1 flex flex-col min-h-0 overflow-y-auto">
+      <div className="flex-1 flex flex-col min-h-screen md:pl-64">
         {/* Desktop Header */}
         <header className="hidden md:flex bg-white border-b border-stone-200 px-8 py-4 justify-between items-center shadow-xs">
           <div>
