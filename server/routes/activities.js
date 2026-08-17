@@ -5,7 +5,7 @@ import { requireAuth, requireAdmin } from '../middleware/auth.js';
 const router = express.Router();
 
 // List all active or inactive activities
-router.get('/', requireAuth, async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const list = await Activity.find();
     res.json(list);
