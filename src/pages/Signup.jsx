@@ -414,28 +414,49 @@ export const Signup = () => {
                       <p className="text-[10px] text-rose-605 mt-0.5 mb-2 font-bold">{inlineErrors.specialties}</p>
                     )}
                     
-                    <div className="grid grid-cols-2 gap-2 bg-stone-50 p-3 rounded-2xl border border-stone-150">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-stone-50 p-4 rounded-2xl border border-stone-150">
                       {activitiesList.map((act) => {
-                        const isChecked = selectedSpecialties.includes(act.id);
+                        const actId = act._id || act.id;
+                        const isChecked = selectedSpecialties.includes(actId);
                         return (
-                          <button
-                            type="button"
-                            key={act.id}
-                            onClick={() => toggleSpecialty(act.id)}
-                            className={`flex items-center space-x-2 p-2.5 rounded-xl border text-left font-bold transition-all cursor-pointer ${
+                          <div
+                            key={actId}
+                            onClick={() => toggleSpecialty(actId)}
+                            className={`flex items-start space-x-3 p-3.5 rounded-xl border text-left transition-all cursor-pointer select-none ${
                               isChecked
-                                ? 'bg-indigo-600 border-indigo-650 text-white shadow-xs'
-                                : 'bg-white border-stone-200 text-stone-700 hover:bg-stone-50'
+                                ? 'bg-indigo-50 border-indigo-300 ring-2 ring-indigo-500/20 shadow-xs'
+                                : 'bg-white border-stone-200 text-stone-700 hover:bg-stone-50/50'
                             }`}
                           >
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              readOnly
-                              className="w-3.5 h-3.5 text-indigo-600 focus:ring-indigo-500 border-stone-300 rounded-sm cursor-pointer accent-white"
-                            />
-                            <span className="text-[11px] truncate">{act.name}</span>
-                          </button>
+                            <div className="flex items-center h-5 pt-0.5">
+                              <input
+                                id={`specialty-${actId}`}
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {}}
+                                className="w-4 h-4 text-indigo-650 focus:ring-indigo-550 border-stone-300 rounded-sm cursor-pointer accent-indigo-600"
+                              />
+                            </div>
+                            <label 
+                              htmlFor={`specialty-${actId}`}
+                              className="flex-1 cursor-pointer"
+                              onClick={(e) => e.preventDefault()}
+                            >
+                              <p className={`font-bold text-xs ${isChecked ? 'text-indigo-900' : 'text-stone-850'}`}>
+                                {act.name}
+                              </p>
+                              {act.description && (
+                                <p className="text-[10px] text-stone-400 font-medium mt-0.5 line-clamp-2 leading-relaxed">
+                                  {act.description}
+                                </p>
+                              )}
+                              {act.pricePerClass && (
+                                <p className={`text-[10px] font-bold mt-1.5 ${isChecked ? 'text-indigo-600 font-extrabold' : 'text-stone-505'}`}>
+                                  Rate: ${act.pricePerClass}/class
+                                </p>
+                              )}
+                            </label>
+                          </div>
                         );
                       })}
                     </div>
